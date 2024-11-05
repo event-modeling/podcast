@@ -1,0 +1,15 @@
+{{ define "main" }}
+    <h1>{{ .Title }}</h1>
+    {{ .Content }}
+    
+    <h2>Latest Episodes</h2>
+    {{ range where .Site.RegularPages "Type" "episode" }}
+    <article>
+        <h3><a href="{{ .RelPermalink }}">{{ .Title }}</a></h3>
+        <time>{{ .Date.Format "January 2, 2006" }}</time>
+        {{ with .Description }}
+        <p>{{ . }}</p>
+        {{ end }}
+    </article>
+    {{ end }}
+{{ end }}

@@ -1,0 +1,28 @@
+baseURL = 'https://podcast.eventmodeling.org/'
+languageCode = 'en-us'
+title = 'Event Modeling and Event Sourcing Podcast'
+
+# Add podcast-specific parameters
+[params]
+  [params.podcast]
+    description = "The Event Modeling and Event Sourcing Podcast is a podcast that covers the latest news and trends in the world of event modeling and event sourcing."
+    subtitle = "A podcast about event modeling and event sourcing"
+    summary = "The Event Modeling and Event Sourcing Podcast is a podcast that covers the latest news and trends in the world of event modeling and event sourcing."
+    author = "Adam Dymitruk"
+    email = "adam@eventsourcing.com"
+    image = "images/podcast-cover.png"
+    category = "Technology"
+    subcategory = "Tech News"
+    explicit = "no"
+    language = "en-us"
+    type = "episodic" 
+
+    
+# Configure RSS output formats
+[outputFormats]
+  [outputFormats.RSS]
+    mediatype = "application/rss+xml"
+    baseName = "feed"
+
+[outputs]
+  home = ["HTML", "RSS"]

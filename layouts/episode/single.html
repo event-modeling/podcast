@@ -1,0 +1,29 @@
+{{ define "main" }}
+<article class="episode">
+    <h1>{{ .Title }}</h1>
+    
+    <!-- Audio Player -->
+    <div class="audio-player">
+        <audio controls>
+            <source src="{{ .Params.audio }}" type="audio/mpeg">
+            Your browser does not support the audio element.
+        </audio>
+    </div>
+
+    <!-- YouTube Video -->
+    {{ with .Params.youtube_id }}
+    <div class="video-container">
+        <iframe 
+            src="https://www.youtube.com/embed/{{ . }}" 
+            frameborder="0" 
+            allowfullscreen>
+        </iframe>
+    </div>
+    {{ end }}
+
+    <!-- Episode Content -->
+    <div class="content">
+        {{ .Content }}
+    </div>
+</article>
+{{ end }}

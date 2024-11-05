@@ -1,0 +1,50 @@
+<rss version="2.0" 
+    xmlns:content="http://purl.org/rss/1.0/modules/content/"
+    xmlns:wfw="http://wellformedweb.org/CommentAPI/"
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmlns:atom="http://www.w3.org/2005/Atom"
+    xmlns:sy="http://purl.org/rss/1.0/modules/syndication/"
+    xmlns:slash="http://purl.org/rss/1.0/modules/slash/"
+    xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+    xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>{{ .Site.Title }}</title>
+    <atom:link href="{{ "feed.xml" | absURL }}" rel="self" type="application/rss+xml" />
+    <link>{{ .Site.BaseURL }}</link>
+    <description>{{ .Site.Params.podcast.description }}</description>
+    <lastBuildDate>{{ .Date.Format "Mon, 02 Jan 2006 15:04:05 -0700" | safeHTML }}</lastBuildDate>
+    <language>{{ .Site.Params.podcast.language }}</language>
+    
+    <itunes:subtitle>{{ .Site.Params.podcast.subtitle }}</itunes:subtitle>
+    <itunes:summary>{{ .Site.Params.podcast.summary }}</itunes:summary>
+    <itunes:author>{{ .Site.Params.podcast.author }}</itunes:author>
+    <itunes:owner>
+        <itunes:name>{{ .Site.Params.podcast.author }}</itunes:name>
+        <itunes:email>{{ .Site.Params.podcast.email }}</itunes:email>
+    </itunes:owner>
+    <itunes:image href="{{ .Site.Params.podcast.image | absURL }}" />
+    <itunes:category text="{{ .Site.Params.podcast.category }}">
+        <itunes:category text="{{ .Site.Params.podcast.subcategory }}" />
+    </itunes:category>
+    <itunes:explicit>{{ .Site.Params.podcast.explicit }}</itunes:explicit>
+
+    {{ range where .Site.RegularPages "Type" "episode" }}
+    <item>
+      <title>{{ .Title }}</title>
+      <link>{{ .Permalink }}</link>
+      <pubDate>{{ .Date.Format "Mon, 02 Jan 2006 15:04:05 -0700" | safeHTML }}</pubDate>
+      <description>{{ .Description }}</description>
+      
+      <enclosure url="{{ .Params.audio }}" 
+                 length="{{ .Params.audio_size }}" 
+                 type="audio/mpeg" />
+      <guid>{{ .Params.audio }}</guid>
+      
+      <itunes:author>{{ .Site.Params.podcast.author }}</itunes:author>
+      <itunes:summary>{{ .Description }}</itunes:summary>
+      <itunes:duration>{{ .Params.duration }}</itunes:duration>
+      <itunes:image href="{{ .Site.Params.podcast.image | absURL }}" />
+    </item>
+    {{ end }}
+  </channel>
+</rss> 
