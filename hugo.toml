@@ -1,7 +1,7 @@
 baseURL = 'https://podcast.eventmodeling.org/'
 languageCode = 'en-us'
 title = 'Event Modeling and Event Sourcing Podcast'
-
+theme = 'podcast'
 # Add podcast-specific parameters
 [params]
   [params.podcast]
