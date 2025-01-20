@@ -1,0 +1,18 @@
+{{ define "main" }}
+<section class="episode-list">
+    <h2>Latest Episodes</h2>
+    {{ range where .Site.RegularPages "Section" "episodes" }}
+    <article class="episode-card">
+        <h3><a href="{{ .RelPermalink }}">{{ .Title }}</a></h3>
+        <p class="date">{{ .Date.Format "January 2, 2006" }}</p>
+        <p class="description">{{ .Description }}</p>
+        <div class="player">
+            <audio controls>
+                <source src="{{ .Params.audio | relURL }}" type="audio/mpeg">
+                Your browser does not support the audio element.
+            </audio>
+        </div>
+    </article>
+    {{ end }}
+</section>
+{{ end }} 

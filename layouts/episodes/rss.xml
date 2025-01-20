@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" 
+    xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+    xmlns:content="http://purl.org/rss/1.0/modules/content/"
+    xmlns:atom="http://www.w3.org/2005/Atom">
+    <channel>
+        <title>{{ .Site.Title }}</title>
+        <link>{{ .Site.BaseURL }}</link>
+        <language>{{ .Site.Language.LanguageCode }}</language>
+        <copyright>© {{ now.Format "2006" }} {{ .Site.Title }}</copyright>
+        <itunes:subtitle>{{ .Site.Params.subtitle }}</itunes:subtitle>
+        <itunes:author>{{ delimit .Site.Params.authors ", " }}</itunes:author>
+        <itunes:summary>{{ .Site.Params.description }}</itunes:summary>
+        <description>{{ .Site.Params.description }}</description>
+        <itunes:owner>
+            <itunes:name>{{ index .Site.Params.authors 0 }}</itunes:name>
+            <itunes:email>{{ .Site.Params.email }}</itunes:email>
+        </itunes:owner>
+        <itunes:image href="{{ "images/podcast-cover.jpg" | absURL }}"/>
+        <itunes:category text="Technology"/>
+
+        {{ range .Pages.ByDate.Reverse }}
+        <item>
+            <title>{{ .Title }}</title>
+            <itunes:author>{{ delimit $.Site.Params.authors ", " }}</itunes:author>
+            <description>{{ .Description }}</description>
+            <content:encoded><![CDATA[{{ .Content }}]]></content:encoded>
+            <enclosure 
+                url="{{ .Params.audio | absURL }}"
+                type="audio/mpeg"
+                length="{{ .Params.audio_size | default "0" }}"
+            />
+            <guid>{{ .Permalink }}</guid>
+            <pubDate>{{ .Date.Format "Mon, 02 Jan 2006 15:04:05 -0700" }}</pubDate>
+            <itunes:duration>{{ .Params.duration | default "00:00:00" }}</itunes:duration>
+        </item>
+        {{ end }}
+    </channel>
+</rss> 

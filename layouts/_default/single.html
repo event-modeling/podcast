@@ -1,16 +1,16 @@
 {{ define "main" }}
-<article>
+<article class="episode-detail">
     <h2>{{ .Title }}</h2>
-    <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "January 2, 2006" }}</time>
+    <p class="date">{{ .Date.Format "January 2, 2006" }}</p>
     
-    <div class="episode-player">
+    <div class="player">
         <audio controls>
-            <source src="{{ .Params.audio }}" type="audio/mpeg">
+            <source src="{{ .Params.audio | relURL }}" type="audio/mpeg">
             Your browser does not support the audio element.
         </audio>
     </div>
 
-    <div class="episode-description">
+    <div class="episode-content">
         {{ .Content }}
     </div>
 </article>

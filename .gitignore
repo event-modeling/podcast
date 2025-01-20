@@ -1,2 +1,4 @@
-.hugo*
-public/*
+public/
+.hugo_build.lock
+content/episodes/
+static/audio/

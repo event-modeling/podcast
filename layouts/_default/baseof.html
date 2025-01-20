@@ -4,19 +4,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} - {{ .Site.Title }}{{ end }}</title>
-    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="{{ "css/style.css" | relURL }}">
+    <link rel="alternate" type="application/rss+xml" title="{{ .Site.Title }} RSS Feed" href="{{ "episodes/index.xml" | relURL }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
     <header>
-        <h1>{{ if .IsHome }}{{ .Site.Title }}{{ else }}<a href="/">{{ .Site.Title }}</a>{{ end }}</h1>
+        <img src="{{ "TitleImage.png" | relURL }}" alt="{{ .Site.Title }}" class="title-image">
+        <h1>{{ if .IsHome }}{{ .Site.Title }}{{ else }}<a href="{{ "/" | relURL }}">{{ .Site.Title }}</a>{{ end }}</h1>
+        {{ if .IsHome }}<p class="tagline">{{ .Site.Params.description }}</p>{{ end }}
+        {{ if .IsHome }}
+        <p class="authors">
+            {{ delimit .Site.Params.authors " & " }}
+        </p>
+        {{ end }}
     </header>
-
-    <main{{ if not .IsHome }} class="episode-detail"{{ end }}>
+    
+    <main>
         {{ block "main" . }}{{ end }}
     </main>
 
-    <footer>
-        <p>&copy; {{ now.Format "2006" }} {{ .Site.Title }}. All rights reserved.</p>
-    </footer>
+    {{ partial "footer.html" . }}
 </body>
 </html> 
