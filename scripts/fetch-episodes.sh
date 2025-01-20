@@ -143,6 +143,7 @@ title: "$title"
 date: $formatted_date
 description: "$description"
 audio: "/audio/episode-$count.mp3"
+video: "$video_id"
 ---
 
 ### Show Notes

@@ -12,6 +12,13 @@
                 Your browser does not support the audio element.
             </audio>
         </div>
+        {{ if .Params.video }}
+        <div class="video-link">
+            <a href="https://www.youtube.com/watch?v={{ .Params.video }}" target="_blank">
+                Watch on YouTube
+            </a>
+        </div>
+        {{ end }}
     </article>
     {{ end }}
 </section>

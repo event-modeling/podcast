@@ -3,6 +3,19 @@
     <h2>{{ .Title }}</h2>
     <p class="date">{{ .Date.Format "January 2, 2006" }}</p>
     
+    {{ if .Params.video }}
+    <div class="video-player">
+        <iframe 
+            width="100%" 
+            height="400" 
+            src="https://www.youtube.com/embed/{{ .Params.video }}" 
+            frameborder="0" 
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+            allowfullscreen>
+        </iframe>
+    </div>
+    {{ end }}
+
     <div class="player">
         <audio controls>
             <source src="{{ .Params.audio | relURL }}" type="audio/mpeg">

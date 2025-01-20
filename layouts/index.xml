@@ -1,0 +1,44 @@
+{{- printf "<?xml version=\"1.0\" encoding=\"utf-8\"?>" | safeHTML }}
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>{{ .Site.Title }}</title>
+    <link>{{ .Site.BaseURL }}</link>
+    <language>{{ .Site.LanguageCode }}</language>
+    <description>{{ .Site.Params.description }}</description>
+    <copyright>© {{ now.Format "2006" }} {{ .Site.Title }}</copyright>
+    <lastBuildDate>{{ .Date.Format "Mon, 02 Jan 2006 15:04:05 -0700" }}</lastBuildDate>
+    <itunes:author>{{ delimit .Site.Params.authors ", " }}</itunes:author>
+    <itunes:summary>{{ .Site.Params.description }}</itunes:summary>
+    <itunes:type>episodic</itunes:type>
+    <itunes:explicit>false</itunes:explicit>
+    <itunes:image href="{{ "TitleImage.png" | absURL }}"/>
+    
+    {{ range where .Site.RegularPages "Section" "episodes" }}
+    <item>
+      <title>{{ .Title }}</title>
+      <link>{{ .Permalink }}</link>
+      <pubDate>{{ .Date.Format "Mon, 02 Jan 2006 15:04:05 -0700" }}</pubDate>
+      <guid>{{ .Permalink }}</guid>
+      <description>{{ .Description }}</description>
+      <content:encoded>{{ printf "<![CDATA[%s]]>" .Content | safeHTML }}</content:encoded>
+      
+      <enclosure 
+        url="{{ .Params.audio | absURL }}"
+        type="audio/mpeg"
+        length="{{ with resources.Get .Params.audio }}{{ .Size }}{{ end }}"
+      />
+      
+      <itunes:title>{{ .Title }}</itunes:title>
+      <itunes:author>{{ delimit $.Site.Params.authors ", " }}</itunes:author>
+      <itunes:duration>{{ with resources.Get .Params.audio }}{{ .Duration }}{{ end }}</itunes:duration>
+      <itunes:summary>{{ .Description }}</itunes:summary>
+      <itunes:explicit>false</itunes:explicit>
+      {{ if .Params.video }}
+      <itunes:keywords>event modeling, event sourcing, podcast, video</itunes:keywords>
+      {{ else }}
+      <itunes:keywords>event modeling, event sourcing, podcast</itunes:keywords>
+      {{ end }}
+    </item>
+    {{ end }}
+  </channel>
+</rss> 
