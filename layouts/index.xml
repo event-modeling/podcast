@@ -11,7 +11,19 @@
     <itunes:summary>{{ .Site.Params.description }}</itunes:summary>
     <itunes:type>episodic</itunes:type>
     <itunes:explicit>false</itunes:explicit>
-    <itunes:image href="{{ "TitleImage.png" | absURL }}"/>
+    <itunes:image href="{{ .Site.BaseURL }}podcast.jpg"/>
+    <itunes:owner>
+      <itunes:name>Adam Dymitruk</itunes:name>
+      <itunes:email>adam@eventsourcing.com</itunes:email>
+    </itunes:owner>
+    
+    <itunes:category text="Technology"/>
+    <itunes:category text="Business">
+      <itunes:category text="Management"/>
+    </itunes:category>
+    <itunes:category text="Education">
+      <itunes:category text="How To"/>
+    </itunes:category>
     
     {{ range where .Site.RegularPages "Section" "episodes" }}
     <item>
@@ -30,7 +42,7 @@
       
       <itunes:title>{{ .Title }}</itunes:title>
       <itunes:author>{{ delimit $.Site.Params.authors ", " }}</itunes:author>
-      <itunes:duration>{{ with resources.Get .Params.audio }}{{ .Duration }}{{ end }}</itunes:duration>
+      <itunes:duration>{{ with resources.Get .Params.audio }}{{ div .Size 16000 }}:00{{ end }}</itunes:duration>
       <itunes:summary>{{ .Description }}</itunes:summary>
       <itunes:explicit>false</itunes:explicit>
       {{ if .Params.video }}

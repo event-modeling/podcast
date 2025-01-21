@@ -61,10 +61,13 @@ fetch_and_cache_episode() {
         # Download audio if it doesn't exist
         if [ ! -f "$episode_dir/audio.mp3" ]; then
             echo "Downloading audio for episode $count..."
-            yt-dlp -x --audio-format mp3 \
-                  --audio-quality 0 \
-                  -o "$episode_dir/audio.mp3" \
-                  "$video_url"
+            yt-dlp \
+                --extract-audio \
+                --audio-format mp3 \
+                --audio-quality 128k \
+                --postprocessor-args "-ar 44100 -ac 2 -b:a 128k -codec:a libmp3lame -f mp3 -joint_stereo 1 -compression_level 0" \
+                --output "$episode_dir/audio.%(ext)s" \
+                "$video_url"
         fi
         
         # Add small delay to be nice to YouTube
