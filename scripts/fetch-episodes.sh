@@ -52,40 +52,49 @@ fetch_and_cache_episode() {
         
         # Create episode directory
         mkdir -p "$episode_dir"
+    fi
         
         # Get video metadata and save to separate files
+    if [ ! -f "$episode_dir/title" ]; then 
         yt-dlp --print "%(title)s" "$video_url" > "$episode_dir/title"
+    fi
+    if [ ! -f "$episode_dir/date" ]; then
         yt-dlp --print "%(upload_date)s" "$video_url" > "$episode_dir/date"
+    fi
+    if [ ! -f "$episode_dir/description" ]; then
         yt-dlp --print "%(description)s" "$video_url" > "$episode_dir/description"
+    fi
         
         # Download audio if it doesn't exist
-        if [ ! -f "$episode_dir/audio.mp3" ]; then
-            echo "Downloading audio for episode $count..."
-            yt-dlp \
-                --extract-audio \
-                --audio-format mp3 \
-                --audio-quality 128k \
-                --postprocessor-args "-ar 44100 -ac 2 -b:a 128k -codec:a libmp3lame -f mp3 -joint_stereo 1 -compression_level 0" \
-                --output "$episode_dir/audio.%(ext)s" \
-                "$video_url"
-        fi
-        
-        # Add small delay to be nice to YouTube
-        sleep 1
-    else
-        echo "Using cached data for video $video_id"
+    if [ ! -f "$episode_dir/audio.mp3" ]; then
+        echo "Downloading audio for episode $count..."
+        yt-dlp \
+            --extract-audio \
+            --audio-format mp3 \
+            --audio-quality 128k \
+            --postprocessor-args "-ar 44100 -ac 2 -b:a 128k -codec:a libmp3lame -f mp3 -joint_stereo 1 -compression_level 0" \
+            --output "$episode_dir/audio.%(ext)s" \
+            "$video_url"
     fi
+    
+    # get the duration of the audio file for the itunes:duration tag
+    if [ ! -f "$episode_dir/duration" ]; then
+        yt-dlp --print "%(duration)s" "$video_url" > "$episode_dir/duration"
+    fi
+
+    # get the file size in bytes for the enclosure length attribute
+    if [ ! -f "$episode_dir/filesize" ]; then
+        stat --format="%s" "$episode_dir/audio.mp3" > "$episode_dir/filesize"
+    fi
+
+    # Add small delay to be nice to YouTube
+    sleep 1
 }
 
 # Use yt-dlp to get video list
-if [ ! -f "$CACHE_DIR/video_ids.txt" ]; then
-    echo "Fetching video list from channel..."
-    video_ids=$(yt-dlp --get-id "$CHANNEL_URL")
-    echo "$video_ids" > "$CACHE_DIR/video_ids.txt"
-else
-    echo "Using cached video list..."
-    video_ids=$(cat "$CACHE_DIR/video_ids.txt")
-fi
+echo "Fetching video list from channel..."
+video_ids=$(yt-dlp --get-id "$CHANNEL_URL")
+echo "$video_ids" > "$CACHE_DIR/video_ids.txt"
 
 # Count videos
 video_count=$(echo "$video_ids" | wc -l)
@@ -101,32 +110,30 @@ fi
 
 # Process all videos
 echo "Processing all episodes..."
-# Create a temporary file to store episode data
+# Create a temporary file to store video IDs and dates
 temp_file=$(mktemp)
 
-# First pass: Collect all episode data
+# First pass: Collect dates and video IDs
 while IFS= read -r video_id; do
     episode_dir="$CACHED_EPISODES_DIR/$video_id"
     fetch_and_cache_episode "$video_id"
     
     if [ -d "$episode_dir" ] && [ -f "$episode_dir/audio.mp3" ]; then
-        title=$(head -n 1 "$episode_dir/title" | tr -d '\r')
         upload_date=$(head -n 1 "$episode_dir/date" | tr -d '\r')
-        description=$(head -n 1 "$episode_dir/description" | tr -d '\r')
         
         # Only store if we have a valid date (YYYYMMDD format)
         if [[ $upload_date =~ ^[0-9]{8}$ ]]; then
-            echo "$upload_date|$video_id|$title|$description" >> "$temp_file"
+            echo "$upload_date|$video_id" >> "$temp_file"
         fi
     fi
 done <<< "$video_ids"
 
 # remove existing episodes
-rm "$OUTPUT_DIR/*"
+rm -f "$OUTPUT_DIR"/*
 
 # Sort episodes by date (oldest first) and process them
 count=1
-sort "$temp_file" | while IFS='|' read -r upload_date video_id title description; do
+sort "$temp_file" | while IFS='|' read -r upload_date video_id; do
     # Skip empty lines
     if [ -z "$upload_date" ]; then
         continue
@@ -134,6 +141,12 @@ sort "$temp_file" | while IFS='|' read -r upload_date video_id title description
     
     episode_dir="$CACHED_EPISODES_DIR/$video_id"
     formatted_date=$(echo "$upload_date" | sed 's/\(....\)\(..\)\(..\)/\1-\2-\3/')
+    
+    # Look up metadata from cache
+    title=$(head -n 1 "$episode_dir/title" | tr -d '\r')
+    description=$(head -n 1 "$episode_dir/description" | tr -d '\r')
+    duration=$(head -n 1 "$episode_dir/duration" | tr -d '\r')
+    filesize=$(head -n 1 "$episode_dir/filesize" | tr -d '\r')
     
     echo "Processing episode $count: [$formatted_date] $title"
     
@@ -147,6 +160,8 @@ date: $formatted_date
 description: "$description"
 audio: "/audio/episode-$count.mp3"
 video: "$video_id"
+duration: "$duration"
+length: "$filesize"
 ---
 
 ### Show Notes
