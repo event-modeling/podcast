@@ -5,7 +5,6 @@
     <article class="episode-card">
         <h3><a href="{{ .RelPermalink }}">{{ .Title }}</a></h3>
         <p class="date">{{ .Date.Format "January 2, 2006" }}</p>
-        <p class="description">{{ .Description }}</p>
         <div class="player">
             <audio controls>
                 <source src="{{ .Params.audio | relURL }}" type="audio/mpeg">

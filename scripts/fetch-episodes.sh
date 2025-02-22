@@ -6,18 +6,24 @@ OUTPUT_DIR="content/episodes"
 AUDIO_DIR="static/audio"
 CACHE_DIR="$HOME/.cache/event-modeling-podcast"
 CACHED_EPISODES_DIR="$CACHE_DIR/episodes"
-
-# check if "refresh" is passed as an argument
-if [ "$1" == "refresh" ]; then
-    echo "Refreshing episodes..."
-    rm -rf "$CACHE_DIR"
-fi
+SKIP_FETCH_IDS=false
+# check if "refresh" or "skip-ids" are passed as arguments
+for arg in "$@"; do
+    if [ "$arg" == "refresh" ]; then
+        echo "Refreshing episodes..."
+        rm -rf "$CACHE_DIR"
+    elif [ "$arg" == "skip-ids" ]; then
+        echo "Skipping ID fetching..."
+        SKIP_FETCH_IDS=true
+    fi
+done
 
 echo "Starting script with:"
 echo "Channel URL: $CHANNEL_URL"
 echo "Output Dir: $OUTPUT_DIR"
 echo "Audio Dir: $AUDIO_DIR"
 echo "Cache Dir: $CACHE_DIR"
+echo "Skip Fetch IDs: $SKIP_FETCH_IDS"
 
 # Check for yt-dlp
 if ! command -v yt-dlp &> /dev/null; then
@@ -45,29 +51,36 @@ mkdir -p "$CACHED_EPISODES_DIR"
 fetch_and_cache_episode() {
     video_id="$1"
     episode_dir="$CACHED_EPISODES_DIR/$video_id"
+    video_url="https://www.youtube.com/watch?v=$video_id"
     
+    echo "Fetching episode $video_id..."
+    echo "Episode dir: $episode_dir"
+
     if [ ! -d "$episode_dir" ]; then
-        echo "Caching metadata for video $video_id..."
-        video_url="https://www.youtube.com/watch?v=$video_id"
-        
+      
         # Create episode directory
         mkdir -p "$episode_dir"
     fi
         
         # Get video metadata and save to separate files
     if [ ! -f "$episode_dir/title" ]; then 
+        echo "Getting title for episode $video_url"
         yt-dlp --print "%(title)s" "$video_url" > "$episode_dir/title"
     fi
     if [ ! -f "$episode_dir/date" ]; then
+        echo "Getting upload date for episode $video_url"
         yt-dlp --print "%(upload_date)s" "$video_url" > "$episode_dir/date"
     fi
     if [ ! -f "$episode_dir/description" ]; then
+        echo "Getting description for episode $video_url"
         yt-dlp --print "%(description)s" "$video_url" > "$episode_dir/description"
+        echo "got description for episode $video_url"
+        cat "$episode_dir/description"
     fi
         
         # Download audio if it doesn't exist
     if [ ! -f "$episode_dir/audio.mp3" ]; then
-        echo "Downloading audio for episode $count..."
+        echo "Downloading audio for episode $video_url"
         yt-dlp \
             --extract-audio \
             --audio-format mp3 \
@@ -79,6 +92,7 @@ fetch_and_cache_episode() {
     
     # get the duration of the audio file for the itunes:duration tag
     if [ ! -f "$episode_dir/duration" ]; then
+        echo "Getting duration for episode $video_url"
         yt-dlp --print "%(duration)s" "$video_url" > "$episode_dir/duration"
     fi
 
@@ -91,10 +105,15 @@ fetch_and_cache_episode() {
     sleep 1
 }
 
-# Use yt-dlp to get video list
-echo "Fetching video list from channel..."
-video_ids=$(yt-dlp --get-id "$CHANNEL_URL")
-echo "$video_ids" > "$CACHE_DIR/video_ids.txt"
+if [ SKIP_FETCH_IDS ]; then 
+    echo "Skipping video list fetch..."
+    video_ids=$(cat "$CACHE_DIR/video_ids.txt")
+else
+    # Use yt-dlp to get video list
+    echo "Fetching video list from channel..."
+    video_ids=$(yt-dlp --get-id "$CHANNEL_URL")
+    echo "$video_ids" > "$CACHE_DIR/video_ids.txt"
+fi
 
 # Count videos
 video_count=$(echo "$video_ids" | wc -l)
@@ -144,7 +163,7 @@ sort "$temp_file" | while IFS='|' read -r upload_date video_id; do
     
     # Look up metadata from cache
     title=$(head -n 1 "$episode_dir/title" | tr -d '\r')
-    description=$(head -n 1 "$episode_dir/description" | tr -d '\r')
+    description=$(cat "$episode_dir/description")
     duration=$(head -n 1 "$episode_dir/duration" | tr -d '\r')
     filesize=$(head -n 1 "$episode_dir/filesize" | tr -d '\r')
     
@@ -168,12 +187,10 @@ length: "$filesize"
 
 $description
 
-### Links Mentioned
-
 EOF
         
         # Copy audio file
-        cp "$episode_dir/audio.mp3" "$AUDIO_DIR/episode-$count.mp3"
+        cp "$episode_dir/audio.mp3" "$AUDIO_DIR/episode-$count.mp3" 
         count=$((count + 1))
     else
         echo "Warning: Missing audio file for $title"
