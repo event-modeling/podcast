@@ -7,6 +7,7 @@ AUDIO_DIR="static/audio"
 CACHE_DIR="$HOME/.cache/event-modeling-podcast"
 CACHED_EPISODES_DIR="$CACHE_DIR/episodes"
 SKIP_FETCH_IDS=false
+
 # check if "refresh" or "skip-ids" are passed as arguments
 for arg in "$@"; do
     if [ "$arg" == "refresh" ]; then
@@ -17,6 +18,7 @@ for arg in "$@"; do
         SKIP_FETCH_IDS=true
     fi
 done
+
 
 echo "Starting script with:"
 echo "Channel URL: $CHANNEL_URL"
@@ -105,7 +107,7 @@ fetch_and_cache_episode() {
     sleep 1
 }
 
-if [ SKIP_FETCH_IDS ]; then 
+if [ "$SKIP_FETCH_IDS" = true ]; then 
     echo "Skipping video list fetch..."
     video_ids=$(cat "$CACHE_DIR/video_ids.txt")
 else
