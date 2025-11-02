@@ -121,10 +121,10 @@ fi
 video_count=$(echo "$video_ids" | wc -l)
 echo "Found $video_count videos"
 
-# ask if the user wants to continue
-echo -n "Do you want to continue? (y/n) "
-read answer
-if [[ $answer != "y" && $answer != "Y" ]]; then
+# ask if the user wants to continue, default to Yes if Enter is pressed
+read -r -p "Do you want to continue? (Y/n) " answer
+answer=${answer:-Y}
+if [[ $answer != [Yy] ]]; then
     echo "User chose not to continue. Exiting..."
     exit 0
 fi
