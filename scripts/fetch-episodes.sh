@@ -59,12 +59,24 @@ fetch_and_cache_episode() {
     echo "Episode dir: $episode_dir"
 
     if [ ! -d "$episode_dir" ]; then
-      
         # Create episode directory
         mkdir -p "$episode_dir"
     fi
+
+    metadata_complete=true
+    for required in title date description audio.mp3 duration filesize; do
+        if [ ! -f "$episode_dir/$required" ]; then
+            metadata_complete=false
+            break
+        fi
+    done
+
+    if [ "$metadata_complete" = true ]; then
+        echo "Cache already complete for $video_id, skipping fetch."
+        return
+    fi
         
-        # Get video metadata and save to separate files
+    # Get video metadata and save to separate files
     if [ ! -f "$episode_dir/title" ]; then 
         echo "Getting title for episode $video_url"
         yt-dlp --print "%(title)s" "$video_url" > "$episode_dir/title"
@@ -79,28 +91,76 @@ fetch_and_cache_episode() {
         echo "got description for episode $video_url"
         cat "$episode_dir/description"
     fi
-        
-        # Download audio if it doesn't exist
+
+    # Grab cached title for better prompts
+    episode_title=$(head -n 1 "$episode_dir/title" | tr -d '\r')
+
+    # Prompt user for an MP3 file if it doesn't exist
     if [ ! -f "$episode_dir/audio.mp3" ]; then
-        echo "Downloading audio for episode $video_url"
-        yt-dlp \
-            --extract-audio \
-            --audio-format mp3 \
-            --audio-quality 128k \
-            --postprocessor-args "-ar 44100 -ac 2 -b:a 128k -codec:a libmp3lame -f mp3 -joint_stereo 1 -compression_level 0" \
-            --output "$episode_dir/audio.%(ext)s" \
-            "$video_url"
+        echo "Selecting local audio for episode \"$episode_title\""
+        selection_tmp=$(mktemp)
+        current_path="$HOME/"
+
+        while true; do
+            dialog --title "Select MP3 for: $episode_title" \
+                --fselect "$current_path" 16 60 2> "$selection_tmp"
+            dialog_status=$?
+
+            if [ $dialog_status -ne 0 ]; then
+                echo "Selection cancelled for $video_id. Skipping audio."
+                break
+            fi
+
+            selected_file=$(tr -d '\r\n' < "$selection_tmp")
+            if [ -d "$selected_file" ]; then
+                resolved_dir=$(readlink -f "$selected_file")
+                if [ -n "$resolved_dir" ]; then
+                    current_path="$resolved_dir/"
+                else
+                    current_path="$selected_file"
+                fi
+                continue
+            elif [ -f "$selected_file" ]; then
+                source_audio="$selected_file"
+                extension="${selected_file##*.}"
+                shopt -s nocasematch
+                if [[ "$extension" == "mp4" ]]; then
+                    target_audio="${selected_file%.*}.mp3"
+                    if [ ! -f "$target_audio" ]; then
+                        echo "Converting $selected_file to MP3..."
+                        if ! ffmpeg -y -i "$selected_file" -vn -acodec libmp3lame -ab 128k "$target_audio"; then
+                            dialog --title "Conversion failed" --msgbox "ffmpeg could not convert the selected MP4." 6 60
+                            shopt -u nocasematch
+                            continue
+                        fi
+                    fi
+                    source_audio="$target_audio"
+                fi
+                shopt -u nocasematch
+
+                echo "Copying $source_audio to $episode_dir/audio.mp3"
+                cp "$source_audio" "$episode_dir/audio.mp3"
+                break
+            else
+                dialog --title "Invalid selection" --msgbox "Please select a valid file." 6 50
+            fi
+        done
+
+        rm -f "$selection_tmp"
     fi
     
-    # get the duration of the audio file for the itunes:duration tag
-    if [ ! -f "$episode_dir/duration" ]; then
-        echo "Getting duration for episode $video_url"
-        yt-dlp --print "%(duration)s" "$video_url" > "$episode_dir/duration"
-    fi
+    if [ -f "$episode_dir/audio.mp3" ]; then
+        # get the duration of the audio file for the itunes:duration tag
+        if [ ! -f "$episode_dir/duration" ]; then
+            echo "Getting duration from local audio file for $video_url"
+            ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \
+                "$episode_dir/audio.mp3" | awk '{printf "%.0f\n", $1}' > "$episode_dir/duration"
+        fi
 
-    # get the file size in bytes for the enclosure length attribute
-    if [ ! -f "$episode_dir/filesize" ]; then
-        stat --format="%s" "$episode_dir/audio.mp3" > "$episode_dir/filesize"
+        # get the file size in bytes for the enclosure length attribute
+        if [ ! -f "$episode_dir/filesize" ]; then
+            stat --format="%s" "$episode_dir/audio.mp3" > "$episode_dir/filesize"
+        fi
     fi
 
     # Add small delay to be nice to YouTube
