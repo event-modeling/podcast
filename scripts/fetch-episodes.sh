@@ -49,121 +49,30 @@ mkdir -p "$OUTPUT_DIR"
 mkdir -p "$AUDIO_DIR"
 mkdir -p "$CACHED_EPISODES_DIR"
 
-# Function to fetch and cache episode data
-fetch_and_cache_episode() {
+# Function to fetch episode metadata
+fetch_episode_metadata() {
     video_id="$1"
     episode_dir="$CACHED_EPISODES_DIR/$video_id"
     video_url="https://www.youtube.com/watch?v=$video_id"
-    
-    echo "Fetching episode $video_id..."
-    echo "Episode dir: $episode_dir"
 
     if [ ! -d "$episode_dir" ]; then
-        # Create episode directory
         mkdir -p "$episode_dir"
     fi
 
-    metadata_complete=true
-    for required in title date description audio.mp3 duration filesize; do
-        if [ ! -f "$episode_dir/$required" ]; then
-            metadata_complete=false
-            break
-        fi
-    done
-
-    if [ "$metadata_complete" = true ]; then
-        echo "Cache already complete for $video_id, skipping fetch."
-        return
-    fi
-        
-    # Get video metadata and save to separate files
-    if [ ! -f "$episode_dir/title" ]; then 
-        echo "Getting title for episode $video_url"
-        yt-dlp --print "%(title)s" "$video_url" > "$episode_dir/title"
+    # Get video metadata if not already cached
+    if [ ! -f "$episode_dir/title" ] || [ ! -s "$episode_dir/title" ]; then 
+        echo "Getting title for $video_id"
+        yt-dlp --print "%(title)s" "$video_url" > "$episode_dir/title" 2>/dev/null
     fi
     if [ ! -f "$episode_dir/date" ]; then
-        echo "Getting upload date for episode $video_url"
-        yt-dlp --print "%(upload_date)s" "$video_url" > "$episode_dir/date"
+        echo "Getting upload date for $video_id"
+        yt-dlp --print "%(upload_date)s" "$video_url" > "$episode_dir/date" 2>/dev/null
     fi
     if [ ! -f "$episode_dir/description" ]; then
-        echo "Getting description for episode $video_url"
-        yt-dlp --print "%(description)s" "$video_url" > "$episode_dir/description"
-        echo "got description for episode $video_url"
-        cat "$episode_dir/description"
-    fi
-
-    # Grab cached title for better prompts
-    episode_title=$(head -n 1 "$episode_dir/title" | tr -d '\r')
-
-    # Prompt user for an MP3 file if it doesn't exist
-    if [ ! -f "$episode_dir/audio.mp3" ]; then
-        echo "Selecting local audio for episode \"$episode_title\""
-        selection_tmp=$(mktemp)
-        current_path="$HOME/"
-
-        while true; do
-            dialog --title "Select MP3 for: $episode_title" \
-                --fselect "$current_path" 16 60 2> "$selection_tmp"
-            dialog_status=$?
-
-            if [ $dialog_status -ne 0 ]; then
-                echo "Selection cancelled for $video_id. Skipping audio."
-                break
-            fi
-
-            selected_file=$(tr -d '\r\n' < "$selection_tmp")
-            if [ -d "$selected_file" ]; then
-                resolved_dir=$(readlink -f "$selected_file")
-                if [ -n "$resolved_dir" ]; then
-                    current_path="$resolved_dir/"
-                else
-                    current_path="$selected_file"
-                fi
-                continue
-            elif [ -f "$selected_file" ]; then
-                source_audio="$selected_file"
-                extension="${selected_file##*.}"
-                shopt -s nocasematch
-                if [[ "$extension" == "mp4" ]]; then
-                    target_audio="${selected_file%.*}.mp3"
-                    if [ ! -f "$target_audio" ]; then
-                        echo "Converting $selected_file to MP3..."
-                        if ! ffmpeg -y -i "$selected_file" -vn -acodec libmp3lame -ab 128k "$target_audio"; then
-                            dialog --title "Conversion failed" --msgbox "ffmpeg could not convert the selected MP4." 6 60
-                            shopt -u nocasematch
-                            continue
-                        fi
-                    fi
-                    source_audio="$target_audio"
-                fi
-                shopt -u nocasematch
-
-                echo "Copying $source_audio to $episode_dir/audio.mp3"
-                cp "$source_audio" "$episode_dir/audio.mp3"
-                break
-            else
-                dialog --title "Invalid selection" --msgbox "Please select a valid file." 6 50
-            fi
-        done
-
-        rm -f "$selection_tmp"
+        echo "Getting description for $video_id"
+        yt-dlp --print "%(description)s" "$video_url" > "$episode_dir/description" 2>/dev/null
     fi
     
-    if [ -f "$episode_dir/audio.mp3" ]; then
-        # get the duration of the audio file for the itunes:duration tag
-        if [ ! -f "$episode_dir/duration" ]; then
-            echo "Getting duration from local audio file for $video_url"
-            ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \
-                "$episode_dir/audio.mp3" | awk '{printf "%.0f\n", $1}' > "$episode_dir/duration"
-        fi
-
-        # get the file size in bytes for the enclosure length attribute
-        if [ ! -f "$episode_dir/filesize" ]; then
-            stat --format="%s" "$episode_dir/audio.mp3" > "$episode_dir/filesize"
-        fi
-    fi
-
-    # Add small delay to be nice to YouTube
     sleep 1
 }
 
@@ -189,57 +98,193 @@ if [[ $answer != [Yy] ]]; then
     exit 0
 fi
 
-# Process all videos
-echo "Processing all episodes..."
-# Create a temporary file to store video IDs and dates
-temp_file=$(mktemp)
+# Step 1: Fetch all metadata first
+echo "Fetching episode metadata..."
+while IFS= read -r video_id; do
+    fetch_episode_metadata "$video_id"
+done <<< "$video_ids"
 
-# First pass: Collect dates and video IDs
+# Step 2: Build sorted list with dates and create tab-delimited mapping file
+# Format: episode_number<TAB>video_id<TAB>title
+echo "Building episode mapping..."
+episode_mapping=$(mktemp)
+temp_dates=$(mktemp)
+
+# Collect all video IDs with their dates
 while IFS= read -r video_id; do
     episode_dir="$CACHED_EPISODES_DIR/$video_id"
-    fetch_and_cache_episode "$video_id"
-    
-    if [ -d "$episode_dir" ] && [ -f "$episode_dir/audio.mp3" ]; then
+    if [ -f "$episode_dir/date" ]; then
         upload_date=$(head -n 1 "$episode_dir/date" | tr -d '\r')
-        
-        # Only store if we have a valid date (YYYYMMDD format)
         if [[ $upload_date =~ ^[0-9]{8}$ ]]; then
-            echo "$upload_date|$video_id" >> "$temp_file"
+            title=$(head -n 1 "$episode_dir/title" | tr -d '\r' | sed 's/\t/ /g')
+            if [ -z "$title" ]; then
+                title="Video $video_id"
+            fi
+            echo "$upload_date|$video_id|$title" >> "$temp_dates"
         fi
     fi
 done <<< "$video_ids"
 
-# remove existing episodes
-rm -f "$OUTPUT_DIR"/*
-
-# Sort episodes by date (oldest first) and process them
+# Sort by date (oldest first) and assign episode numbers
 count=1
-sort "$temp_file" | while IFS='|' read -r upload_date video_id; do
-    # Skip empty lines
-    if [ -z "$upload_date" ]; then
-        continue
+sort "$temp_dates" | while IFS='|' read -r upload_date video_id title; do
+    echo -e "$count\t$video_id\t$title" >> "$episode_mapping"
+    count=$((count + 1))
+done
+
+# Step 3: Process each episode using the mapping
+echo "Processing episodes..."
+while IFS=$'\t' read -r episode_num video_id episode_title; do
+    episode_dir="$CACHED_EPISODES_DIR/$video_id"
+    video_url="https://www.youtube.com/watch?v=$video_id"
+    
+    echo "Processing episode $episode_num: $episode_title"
+    
+    # Check if MP3 already exists in static/audio
+    if [ -f "$AUDIO_DIR/episode-$episode_num.mp3" ]; then
+        echo "Found existing MP3 in static/audio: episode-$episode_num.mp3"
+        echo "$AUDIO_DIR/episode-$episode_num.mp3" > "$episode_dir/audio_source.txt"
+    else
+        # Prompt for MP3 or MP4
+        echo "Selecting local audio for episode \"$episode_title\""
+        selection_tmp=$(mktemp)
+        current_path="$HOME/"
+
+        while true; do
+            dialog --title "Select MP3 or MP4 for: $episode_title" \
+                --fselect "$current_path" 16 60 2> "$selection_tmp"
+            dialog_status=$?
+
+            if [ $dialog_status -ne 0 ]; then
+                echo "Selection cancelled for $video_id. Skipping audio."
+                break
+            fi
+
+            selected_file=$(tr -d '\r\n' < "$selection_tmp")
+            if [ -d "$selected_file" ]; then
+                resolved_dir=$(readlink -f "$selected_file")
+                if [ -n "$resolved_dir" ]; then
+                    current_path="$resolved_dir/"
+                else
+                    current_path="$selected_file"
+                fi
+                continue
+            elif [ -f "$selected_file" ]; then
+                source_audio="$selected_file"
+                extension="${selected_file##*.}"
+                shopt -s nocasematch
+                if [[ "$extension" == "mp4" ]]; then
+                    target_audio="${selected_file%.*}.mp3"
+                    # Get source duration for verification
+                    source_duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$selected_file" 2>/dev/null | head -n 1)
+                    needs_conversion=true
+                    
+                    # Check if converted file exists and is complete
+                    if [ -f "$target_audio" ]; then
+                        existing_duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$target_audio" 2>/dev/null | head -n 1)
+                        if [ -n "$source_duration" ] && [ -n "$existing_duration" ]; then
+                            duration_diff=$(echo "$source_duration - $existing_duration" | bc | awk '{if ($1 < 0) print -$1; else print $1}')
+                            # Allow 2 second tolerance for rounding
+                            if (( $(echo "$duration_diff <= 2" | bc -l) )); then
+                                echo "Using existing converted MP3 (duration matches source)"
+                                needs_conversion=false
+                            else
+                                echo "Existing MP3 is incomplete (${existing_duration}s vs ${source_duration}s), re-converting..."
+                                rm -f "$target_audio"
+                            fi
+                        fi
+                    fi
+                    if [ "$needs_conversion" = true ]; then
+                        echo "Converting $selected_file to MP3..."
+                        echo "This may take several minutes. Please wait..."
+                        timeout 7200 ffmpeg -y -i "$selected_file" -vn -acodec libmp3lame -ab 128k "$target_audio" < /dev/null > /tmp/ffmpeg_convert.log 2>&1
+                        ffmpeg_exit=$?
+                        if [ $ffmpeg_exit -eq 124 ]; then
+                            echo "Warning: ffmpeg conversion timed out after 2 hours"
+                            ffmpeg_exit=1
+                        fi
+                        if [ $ffmpeg_exit -ne 0 ]; then
+                            dialog --title "Conversion failed" --msgbox "ffmpeg could not convert the selected MP4. Exit code: $ffmpeg_exit\n\nCheck /tmp/ffmpeg_convert.log for details." 10 70
+                            shopt -u nocasematch
+                            continue
+                        fi
+                        # Verify the output duration matches the source
+                        if [ -n "$source_duration" ] && [ -f "$target_audio" ]; then
+                            output_duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$target_audio" 2>/dev/null | head -n 1)
+                            if [ -n "$output_duration" ] && [ -n "$source_duration" ]; then
+                                duration_diff=$(echo "$source_duration - $output_duration" | bc | awk '{if ($1 < 0) print -$1; else print $1}')
+                                if (( $(echo "$duration_diff > 2" | bc -l) )); then
+                                    echo "Warning: Output duration (${output_duration}s) differs significantly from source (${source_duration}s)"
+                                    dialog --title "Conversion warning" --msgbox "The converted MP3 duration (${output_duration}s) differs from the source MP4 (${source_duration}s). The conversion may be incomplete." 8 70
+                                fi
+                            fi
+                        fi
+                    fi
+                    source_audio="$target_audio"
+                fi
+                shopt -u nocasematch
+
+                # Store the source audio path
+                echo "$source_audio" > "$episode_dir/audio_source.txt"
+                break
+            else
+                dialog --title "Invalid selection" --msgbox "Please select a valid file." 6 50
+            fi
+        done
+
+        rm -f "$selection_tmp"
     fi
     
+    # Get duration and filesize from audio source
+    audio_source=""
+    if [ -f "$episode_dir/audio_source.txt" ]; then
+        audio_source=$(cat "$episode_dir/audio_source.txt" | tr -d '\r\n')
+    fi
+    
+    if [ -n "$audio_source" ] && [ -f "$audio_source" ]; then
+        # Get duration if not cached
+        if [ ! -f "$episode_dir/duration" ]; then
+            echo "Getting duration from audio file for $video_id"
+            ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \
+                "$audio_source" | awk '{printf "%.0f\n", $1}' > "$episode_dir/duration"
+        fi
+
+        # Get file size if not cached
+        if [ ! -f "$episode_dir/filesize" ]; then
+            stat --format="%s" "$audio_source" > "$episode_dir/filesize"
+        fi
+    fi
+done < "$episode_mapping"
+
+# Step 4: Remove existing episodes and create new markdown files
+rm -f "$OUTPUT_DIR"/*
+
+# Step 5: Generate markdown files using the mapping
+while IFS=$'\t' read -r episode_num video_id episode_title; do
     episode_dir="$CACHED_EPISODES_DIR/$video_id"
-    formatted_date=$(echo "$upload_date" | sed 's/\(....\)\(..\)\(..\)/\1-\2-\3/')
     
-    # Look up metadata from cache
-    title=$(head -n 1 "$episode_dir/title" | tr -d '\r')
-    description=$(cat "$episode_dir/description")
-    duration=$(head -n 1 "$episode_dir/duration" | tr -d '\r')
-    filesize=$(head -n 1 "$episode_dir/filesize" | tr -d '\r')
+    # Get audio source path
+    audio_source=""
+    if [ -f "$episode_dir/audio_source.txt" ]; then
+        audio_source=$(cat "$episode_dir/audio_source.txt" | tr -d '\r\n')
+    fi
     
-    echo "Processing episode $count: [$formatted_date] $title"
-    
-    # Only process if audio file exists
-    if [ -f "$episode_dir/audio.mp3" ]; then
-        # Create markdown file with escaped content
-        cat > "$OUTPUT_DIR/episode-$count.md" << EOF
+    if [ -n "$audio_source" ] && [ -f "$audio_source" ]; then
+        upload_date=$(head -n 1 "$episode_dir/date" | tr -d '\r')
+        formatted_date=$(echo "$upload_date" | sed 's/\(....\)\(..\)\(..\)/\1-\2-\3/')
+        description=$(cat "$episode_dir/description")
+        duration=$(head -n 1 "$episode_dir/duration" | tr -d '\r')
+        filesize=$(head -n 1 "$episode_dir/filesize" | tr -d '\r')
+        
+        echo "Creating episode $episode_num: [$formatted_date] $episode_title"
+        
+        # Create markdown file
+        cat > "$OUTPUT_DIR/episode-$episode_num.md" << EOF
 ---
-title: "$title"
+title: "$episode_title"
 date: $formatted_date
 description: "$description"
-audio: "/audio/episode-$count.mp3"
+audio: "/audio/episode-$episode_num.mp3"
 video: "$video_id"
 duration: "$duration"
 length: "$filesize"
@@ -251,15 +296,17 @@ $description
 
 EOF
         
-        # Copy audio file
-        cp "$episode_dir/audio.mp3" "$AUDIO_DIR/episode-$count.mp3" 
-        count=$((count + 1))
+        # Copy audio file to static/audio if it's not already there
+        if [ "$audio_source" != "$AUDIO_DIR/episode-$episode_num.mp3" ]; then
+            cp "$audio_source" "$AUDIO_DIR/episode-$episode_num.mp3"
+        fi
     else
-        echo "Warning: Missing audio file for $title"
+        echo "Warning: Missing audio file for episode $episode_num: $episode_title"
     fi
-done
+done < "$episode_mapping"
 
-# Clean up temp file
-rm "$temp_file"
+# Clean up temp files
+rm -f "$episode_mapping"
+rm -f "$temp_dates"
 
-echo "Script completed!" 
+echo "Script completed!"
