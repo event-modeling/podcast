@@ -148,7 +148,23 @@ while IFS=$'\t' read -r episode_num video_id episode_title; do
         # Prompt for MP3 or MP4
         echo "Selecting local audio for episode \"$episode_title\""
         selection_tmp=$(mktemp)
-        current_path="$HOME/"
+        
+        # Load cached directory if it exists, otherwise default to HOME
+        cached_dir_file="$CACHE_DIR/last_directory.txt"
+        if [ -f "$cached_dir_file" ]; then
+            current_path=$(cat "$cached_dir_file" | tr -d '\r\n')
+            # Verify the cached directory still exists
+            if [ ! -d "$current_path" ]; then
+                current_path="$HOME/"
+            else
+                # Ensure it ends with /
+                if [[ "$current_path" != */ ]]; then
+                    current_path="$current_path/"
+                fi
+            fi
+        else
+            current_path="$HOME/"
+        fi
 
         while true; do
             dialog --title "Select MP3 or MP4 for: $episode_title" \
@@ -167,6 +183,10 @@ while IFS=$'\t' read -r episode_num video_id episode_title; do
                     current_path="$resolved_dir/"
                 else
                     current_path="$selected_file"
+                fi
+                # Cache the navigated directory
+                if [ -d "$current_path" ]; then
+                    echo "$current_path" > "$cached_dir_file"
                 fi
                 continue
             elif [ -f "$selected_file" ]; then
@@ -226,6 +246,13 @@ while IFS=$'\t' read -r episode_num video_id episode_title; do
 
                 # Store the source audio path
                 echo "$source_audio" > "$episode_dir/audio_source.txt"
+                
+                # Cache the directory of the selected file for next time
+                selected_dir=$(dirname "$selected_file")
+                if [ -d "$selected_dir" ]; then
+                    echo "$selected_dir" > "$cached_dir_file"
+                fi
+                
                 break
             else
                 dialog --title "Invalid selection" --msgbox "Please select a valid file." 6 50
