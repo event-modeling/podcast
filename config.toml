@@ -3,6 +3,11 @@ languageCode = "en-us"
 title = "The Event Modeling and Event Sourcing Podcast"
 enableRobotsTXT = true
 
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      hardWraps = true
+
 [params]
   description = "Your weekly podcast about Event Modeling and Event Sourcing. We bring topics of interest from the world of Event Modeling and Event Sourcing to you."
   authors = ["Adam Dymitruk", "Martin Dilger"] 
