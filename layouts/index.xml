@@ -38,7 +38,7 @@
       <link>{{ .Permalink }}</link>
       <pubDate>{{ .Date.Format "Mon, 02 Jan 2006 15:04:05 -0700" }}</pubDate>
       <guid>{{ .Permalink }}</guid>
-      <description>{{ .Description }}</description>
+      <description>{{ printf "<![CDATA[%s]]>" .Content | safeHTML }}</description>
       <content:encoded>{{ printf "<![CDATA[%s]]>" .Content | safeHTML }}</content:encoded>
       
       <enclosure 
@@ -50,7 +50,7 @@
       <itunes:title>{{ .Title }}</itunes:title>
       <itunes:author>{{ delimit $.Site.Params.authors ", " }}</itunes:author>
       <itunes:duration>{{ with resources.Get .Params.audio }}{{ div .Size 16000 }}:00{{ end }}</itunes:duration>
-      <itunes:summary>{{ .Description }}</itunes:summary>
+      <itunes:summary>{{ printf "<![CDATA[%s]]>" .Content | safeHTML }}</itunes:summary>
       <itunes:explicit>false</itunes:explicit>
       <itunes:image href="{{ $.Site.BaseURL }}podcast.jpg"/>
       {{ if .Params.video }}

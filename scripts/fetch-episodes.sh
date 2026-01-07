@@ -6,26 +6,69 @@ OUTPUT_DIR="content/episodes"
 AUDIO_DIR="static/audio"
 CACHE_DIR="$HOME/.cache/event-modeling-podcast"
 CACHED_EPISODES_DIR="$CACHE_DIR/episodes"
-SKIP_FETCH_IDS=false
-
-# check if "refresh" or "skip-ids" are passed as arguments
-for arg in "$@"; do
-    if [ "$arg" == "refresh" ]; then
-        echo "Refreshing episodes..."
-        rm -rf "$CACHE_DIR"
-    elif [ "$arg" == "skip-ids" ]; then
-        echo "Skipping ID fetching..."
-        SKIP_FETCH_IDS=true
-    fi
-done
-
 
 echo "Starting script with:"
 echo "Channel URL: $CHANNEL_URL"
 echo "Output Dir: $OUTPUT_DIR"
 echo "Audio Dir: $AUDIO_DIR"
 echo "Cache Dir: $CACHE_DIR"
-echo "Skip Fetch IDs: $SKIP_FETCH_IDS"
+
+# Function to extract video ID from YouTube URL
+extract_video_id() {
+    url="$1"
+    # Handle various YouTube URL formats
+    # youtube.com/watch?v=VIDEO_ID
+    # youtu.be/VIDEO_ID
+    # youtube.com/embed/VIDEO_ID
+    # youtube.com/v/VIDEO_ID
+    if [[ "$url" =~ (youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/|youtube\.com/v/)([a-zA-Z0-9_-]{11}) ]]; then
+        echo "${BASH_REMATCH[2]}"
+    elif [[ "$url" =~ ^[a-zA-Z0-9_-]{11}$ ]]; then
+        # Already a video ID
+        echo "$url"
+    else
+        echo ""
+    fi
+}
+
+# Function to find existing episode number by video ID
+find_episode_by_video_id() {
+    video_id="$1"
+    if [ ! -d "$OUTPUT_DIR" ]; then
+        echo ""
+        return
+    fi
+    
+    for episode_file in "$OUTPUT_DIR"/episode-*.md; do
+        if [ -f "$episode_file" ]; then
+            if grep -q "video: \"$video_id\"" "$episode_file" || grep -q "video: $video_id" "$episode_file"; then
+                # Extract episode number from filename
+                basename "$episode_file" | sed 's/episode-\([0-9]*\)\.md/\1/'
+                return
+            fi
+        fi
+    done
+    echo ""
+}
+
+# Function to find the highest episode number
+find_highest_episode_number() {
+    if [ ! -d "$OUTPUT_DIR" ]; then
+        echo "0"
+        return
+    fi
+    
+    highest=0
+    for episode_file in "$OUTPUT_DIR"/episode-*.md; do
+        if [ -f "$episode_file" ]; then
+            num=$(basename "$episode_file" | sed 's/episode-\([0-9]*\)\.md/\1/' | grep -E '^[0-9]+$')
+            if [ -n "$num" ] && [ "$num" -gt "$highest" ]; then
+                highest=$num
+            fi
+        fi
+    done
+    echo "$highest"
+}
 
 # Check for yt-dlp
 if ! command -v yt-dlp &> /dev/null; then
@@ -50,8 +93,11 @@ mkdir -p "$AUDIO_DIR"
 mkdir -p "$CACHED_EPISODES_DIR"
 
 # Function to fetch episode metadata
+# $1 = video_id
+# $2 = force_refresh (optional, if "force" then always fetch fresh data)
 fetch_episode_metadata() {
     video_id="$1"
+    force_refresh="$2"
     episode_dir="$CACHED_EPISODES_DIR/$video_id"
     video_url="https://www.youtube.com/watch?v=$video_id"
 
@@ -59,16 +105,16 @@ fetch_episode_metadata() {
         mkdir -p "$episode_dir"
     fi
 
-    # Get video metadata if not already cached
-    if [ ! -f "$episode_dir/title" ] || [ ! -s "$episode_dir/title" ]; then 
+    # Get video metadata if not already cached or if force refresh is requested
+    if [ "$force_refresh" = "force" ] || [ ! -f "$episode_dir/title" ] || [ ! -s "$episode_dir/title" ]; then 
         echo "Getting title for $video_id"
         yt-dlp --print "%(title)s" "$video_url" > "$episode_dir/title" 2>/dev/null
     fi
-    if [ ! -f "$episode_dir/date" ]; then
+    if [ "$force_refresh" = "force" ] || [ ! -f "$episode_dir/date" ]; then
         echo "Getting upload date for $video_id"
         yt-dlp --print "%(upload_date)s" "$video_url" > "$episode_dir/date" 2>/dev/null
     fi
-    if [ ! -f "$episode_dir/description" ]; then
+    if [ "$force_refresh" = "force" ] || [ ! -f "$episode_dir/description" ]; then
         echo "Getting description for $video_id"
         yt-dlp --print "%(description)s" "$video_url" > "$episode_dir/description" 2>/dev/null
     fi
@@ -76,61 +122,98 @@ fetch_episode_metadata() {
     sleep 1
 }
 
-if [ "$SKIP_FETCH_IDS" = true ]; then 
-    echo "Skipping video list fetch..."
-    video_ids=$(cat "$CACHE_DIR/video_ids.txt")
+# Check if a URL parameter was passed
+if [ -n "$1" ]; then
+    # Single episode mode
+    echo "Single episode mode: processing URL: $1"
+    video_id=$(extract_video_id "$1")
+    
+    if [ -z "$video_id" ]; then
+        echo "Error: Could not extract video ID from URL: $1"
+        exit 1
+    fi
+    
+    echo "Extracted video ID: $video_id"
+    
+    # Check if this video ID already exists
+    existing_episode_num=$(find_episode_by_video_id "$video_id")
+    
+    if [ -n "$existing_episode_num" ]; then
+        echo "Found existing episode $existing_episode_num with video ID $video_id"
+        episode_num="$existing_episode_num"
+    else
+        # Find the highest episode number and add 1
+        highest=$(find_highest_episode_number)
+        episode_num=$((highest + 1))
+        echo "New episode: will be added as episode $episode_num"
+    fi
+    
+    # Fetch metadata for this single episode (force refresh to get latest data)
+    echo "Fetching episode metadata..."
+    fetch_episode_metadata "$video_id" "force"
+    
+    # Create a simple mapping file for this single episode
+    episode_dir="$CACHED_EPISODES_DIR/$video_id"
+    title=$(head -n 1 "$episode_dir/title" 2>/dev/null | tr -d '\r' | sed 's/\t/ /g')
+    if [ -z "$title" ]; then
+        title="Video $video_id"
+    fi
+    
+    episode_mapping=$(mktemp)
+    echo -e "$episode_num\t$video_id\t$title" > "$episode_mapping"
 else
+    # Full channel mode (original behavior)
     # Use yt-dlp to get video list
     echo "Fetching video list from channel..."
     video_ids=$(yt-dlp --get-id "$CHANNEL_URL")
     echo "$video_ids" > "$CACHE_DIR/video_ids.txt"
-fi
 
-# Count videos
-video_count=$(echo "$video_ids" | wc -l)
-echo "Found $video_count videos"
+    # Count videos
+    video_count=$(echo "$video_ids" | wc -l)
+    echo "Found $video_count videos"
 
-# ask if the user wants to continue, default to Yes if Enter is pressed
-read -r -p "Do you want to continue? (Y/n) " answer
-answer=${answer:-Y}
-if [[ $answer != [Yy] ]]; then
-    echo "User chose not to continue. Exiting..."
-    exit 0
-fi
-
-# Step 1: Fetch all metadata first
-echo "Fetching episode metadata..."
-while IFS= read -r video_id; do
-    fetch_episode_metadata "$video_id"
-done <<< "$video_ids"
-
-# Step 2: Build sorted list with dates and create tab-delimited mapping file
-# Format: episode_number<TAB>video_id<TAB>title
-echo "Building episode mapping..."
-episode_mapping=$(mktemp)
-temp_dates=$(mktemp)
-
-# Collect all video IDs with their dates
-while IFS= read -r video_id; do
-    episode_dir="$CACHED_EPISODES_DIR/$video_id"
-    if [ -f "$episode_dir/date" ]; then
-        upload_date=$(head -n 1 "$episode_dir/date" | tr -d '\r')
-        if [[ $upload_date =~ ^[0-9]{8}$ ]]; then
-            title=$(head -n 1 "$episode_dir/title" | tr -d '\r' | sed 's/\t/ /g')
-            if [ -z "$title" ]; then
-                title="Video $video_id"
-            fi
-            echo "$upload_date|$video_id|$title" >> "$temp_dates"
-        fi
+    # ask if the user wants to continue, default to Yes if Enter is pressed
+    read -r -p "Do you want to continue? (Y/n) " answer
+    answer=${answer:-Y}
+    if [[ $answer != [Yy] ]]; then
+        echo "User chose not to continue. Exiting..."
+        exit 0
     fi
-done <<< "$video_ids"
 
-# Sort by date (oldest first) and assign episode numbers
-count=1
-sort "$temp_dates" | while IFS='|' read -r upload_date video_id title; do
-    echo -e "$count\t$video_id\t$title" >> "$episode_mapping"
-    count=$((count + 1))
-done
+    # Step 1: Fetch all metadata first
+    echo "Fetching episode metadata..."
+    while IFS= read -r video_id; do
+        fetch_episode_metadata "$video_id"
+    done <<< "$video_ids"
+
+    # Step 2: Build sorted list with dates and create tab-delimited mapping file
+    # Format: episode_number<TAB>video_id<TAB>title
+    echo "Building episode mapping..."
+    episode_mapping=$(mktemp)
+    temp_dates=$(mktemp)
+
+    # Collect all video IDs with their dates
+    while IFS= read -r video_id; do
+        episode_dir="$CACHED_EPISODES_DIR/$video_id"
+        if [ -f "$episode_dir/date" ]; then
+            upload_date=$(head -n 1 "$episode_dir/date" | tr -d '\r')
+            if [[ $upload_date =~ ^[0-9]{8}$ ]]; then
+                title=$(head -n 1 "$episode_dir/title" | tr -d '\r' | sed 's/\t/ /g')
+                if [ -z "$title" ]; then
+                    title="Video $video_id"
+                fi
+                echo "$upload_date|$video_id|$title" >> "$temp_dates"
+            fi
+        fi
+    done <<< "$video_ids"
+
+    # Sort by date (oldest first) and assign episode numbers
+    count=1
+    sort "$temp_dates" | while IFS='|' read -r upload_date video_id title; do
+        echo -e "$count\t$video_id\t$title" >> "$episode_mapping"
+        count=$((count + 1))
+    done
+fi
 
 # Step 3: Process each episode using the mapping
 echo "Processing episodes..."
@@ -269,22 +352,34 @@ while IFS=$'\t' read -r episode_num video_id episode_title; do
     fi
     
     if [ -n "$audio_source" ] && [ -f "$audio_source" ]; then
-        # Get duration if not cached
-        if [ ! -f "$episode_dir/duration" ]; then
+        # Get duration (force refresh in single episode mode)
+        if [ -n "$1" ] || [ ! -f "$episode_dir/duration" ]; then
             echo "Getting duration from audio file for $video_id"
             ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \
                 "$audio_source" | awk '{printf "%.0f\n", $1}' > "$episode_dir/duration"
         fi
 
-        # Get file size if not cached
-        if [ ! -f "$episode_dir/filesize" ]; then
+        # Get file size (force refresh in single episode mode)
+        if [ -n "$1" ] || [ ! -f "$episode_dir/filesize" ]; then
+            echo "Getting file size from audio file for $video_id"
             stat --format="%s" "$audio_source" > "$episode_dir/filesize"
         fi
     fi
 done < "$episode_mapping"
 
 # Step 4: Remove existing episodes and create new markdown files
-rm -f "$OUTPUT_DIR"/*
+if [ -n "$1" ]; then
+    # Single episode mode: only remove the specific episode file if it exists
+    # Get the episode number from the mapping file
+    episode_num_from_mapping=$(head -n 1 "$episode_mapping" | cut -f1)
+    if [ -f "$OUTPUT_DIR/episode-$episode_num_from_mapping.md" ]; then
+        echo "Removing existing episode $episode_num_from_mapping file"
+        rm -f "$OUTPUT_DIR/episode-$episode_num_from_mapping.md"
+    fi
+else
+    # Full channel mode: remove all episodes
+    rm -f "$OUTPUT_DIR"/*
+fi
 
 # Step 5: Generate markdown files using the mapping
 while IFS=$'\t' read -r episode_num video_id episode_title; do
@@ -303,14 +398,27 @@ while IFS=$'\t' read -r episode_num video_id episode_title; do
         duration=$(head -n 1 "$episode_dir/duration" | tr -d '\r')
         filesize=$(head -n 1 "$episode_dir/filesize" | tr -d '\r')
         
+        # Escape title for YAML (escape quotes and backslashes)
+        escaped_title=$(echo "$episode_title" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
+        
         echo "Creating episode $episode_num: [$formatted_date] $episode_title"
+        
+        # Process description: convert lines ending with ":" to h4 headings
+        processed_description=$(echo "$description" | awk '{
+            if ($0 ~ /:$/ && NF > 0) {
+                # Remove trailing colon and convert to h4
+                gsub(/:$/, "", $0)
+                print "#### " $0
+            } else {
+                print $0
+            }
+        }')
         
         # Create markdown file
         cat > "$OUTPUT_DIR/episode-$episode_num.md" << EOF
 ---
-title: "$episode_title"
+title: "$escaped_title"
 date: $formatted_date
-description: "$description"
 audio: "/audio/episode-$episode_num.mp3"
 video: "$video_id"
 duration: "$duration"
@@ -319,7 +427,7 @@ length: "$filesize"
 
 ### Show Notes
 
-$description
+$processed_description
 
 EOF
         
@@ -334,6 +442,8 @@ done < "$episode_mapping"
 
 # Clean up temp files
 rm -f "$episode_mapping"
-rm -f "$temp_dates"
+if [ -z "$1" ] && [ -n "$temp_dates" ]; then
+    rm -f "$temp_dates"
+fi
 
 echo "Script completed!"
