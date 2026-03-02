@@ -1,56 +1,82 @@
 #!/usr/bin/env fish
 
-# Function to copy to clipboard with fallback
-function copy_to_clipboard -a text
-    set -l tools wl-copy "xclip -selection clipboard"
-    # Prefer wl-copy if on Wayland
-    if not set -q WAYLAND_DISPLAY
-        set tools "xclip -selection clipboard" wl-copy
-    end
-
-    for tool in $tools
-        # Attempt to copy
-        echo -n "$text" | eval $tool 2>/dev/null
-        
-        # Verify if it worked by trying to paste it back
-        set -l verify_cmd "xclip -selection clipboard -o"
-        if string match -q "wl-copy" $tool
-            set verify_cmd "wl-paste -n"
-        end
-        
-        set -l pasted (eval $verify_cmd 2>/dev/null)
-        if test "$pasted" = "$text"
-            return 0
-        end
-    end
-    return 1
+# Detect display environment
+set -l is_x true
+if set -q WAYLAND_DISPLAY
+    set is_x false
 end
 
-# Function to get from clipboard with fallback
-function get_from_clipboard
-    set -l tools "wl-paste -n" "xclip -selection clipboard -o"
-    if not set -q WAYLAND_DISPLAY
-        set tools "xclip -selection clipboard -o" "wl-paste -n"
-    end
-
-    for tool in $tools
-        set -l content (eval $tool 2>/dev/null | string collect)
-        if test -n "$content"
-            echo "$content"
-            return 0
-        end
-    end
-    return 1
+# Clipboard functions for Wayland
+function get_using_wl
+    wl-paste -n 2>/dev/null
 end
 
-# Main execution
-set -l content (get_from_clipboard)
-if test $status -ne 0
+function set_using_wl
+    wl-copy 2>/dev/null
+end
+
+# Clipboard functions for X11
+function get_using_x
+    xclip -selection clipboard -o 2>/dev/null
+end
+
+function set_using_x
+    xclip -selection clipboard 2>/dev/null
+end
+
+# Add a time offset (in seconds) to a timestamp string (MM:SS or HH:MM:SS)
+function add_time -a timestamp offset
+    set -l parts (string split ':' "$timestamp")
+    set -l h 0
+    set -l m 0
+    set -l s 0
+
+    if test (count $parts) -eq 3
+        set h $parts[1]
+        set m $parts[2]
+        set s $parts[3]
+    else
+        set m $parts[1]
+        set s $parts[2]
+    end
+
+    set -l total (math "$h * 3600 + $m * 60 + $s + $offset")
+    if test $total -lt 0
+        set total 0
+    end
+
+    set -l nh (math "floor($total / 3600)")
+    set -l nm (math "floor(($total % 3600) / 60)")
+    set -l ns (math "$total % 60")
+
+    if test $nh -gt 0
+        printf "%02d:%02d:%02d" $nh $nm $ns
+    else
+        printf "%02d:%02d" $nm $ns
+    end
+end
+
+# --- Main execution ---
+
+# Get clipboard content (each line becomes an array element)
+set -l content
+if test "$is_x" = true
+    set content (get_using_x)
+else
+    set content (get_using_wl)
+end
+
+if test (count $content) -eq 0
     echo "Error: Could not read from clipboard (is it empty?)"
     exit 1
 end
 
-read -P "Enter seconds offset (e.g., 18 or -10): " offset
+# Get offset from args or prompt
+if test -n "$argv[1]"
+    set offset $argv[1]
+else
+    read -P "Enter seconds offset (e.g., 18 or -10): " offset
+end
 
 # Validate offset
 if not string match -qr '^-?[0-9]+$' -- "$offset"
@@ -58,28 +84,28 @@ if not string match -qr '^-?[0-9]+$' -- "$offset"
     exit 1
 end
 
-# Process content using awk
-set -l processed (echo "$content" | awk -v offset="$offset" '
-{
-    line = $0
-    while (match(line, /(([0-9]+):)?([0-9]+):([0-9]+)/, m)) {
-        if (m[2] != "") { h = m[2]; m_val = m[3]; s = m[4] }
-        else { h = 0; m_val = m[3]; s = m[4] }
-        total = h * 3600 + m_val * 60 + s + offset
-        if (total < 0) total = 0
-        nh = int(total / 3600); nm = int((total % 3600) / 60); ns = total % 60
-        if (nh > 0) { new_ts = sprintf("%02d:%02d:%02d", nh, nm, ns) }
-        else { new_ts = sprintf("%02d:%02d", nm, ns) }
-        ts_full = m[0]
-        sub(ts_full, new_ts, line)
-    }
-    print line
-}
-' | string collect)
+# Process content line by line, adjusting all timestamps
+set -l processed
+for line in $content
+    set -l result "$line"
+    for match in (string match -ra '(?:[0-9]+:)?[0-9]+:[0-9]+' "$line")
+        set -l new_ts (add_time "$match" "$offset")
+        set result (string replace "$match" "$new_ts" "$result")
+    end
+    set -a processed "$result"
+end
 
-if copy_to_clipboard "$processed"
+# Set clipboard content (printf preserves newlines between array elements)
+if test "$is_x" = true
+    printf '%s\n' $processed | set_using_x
+else
+    printf '%s\n' $processed | set_using_wl
+end
+set -l copy_status $status
+
+if test $copy_status -eq 0
     echo "Clipboard updated successfully."
 else
-    echo "Error: Failed to update clipboard with any tool."
+    echo "Error: Failed to update clipboard."
     exit 1
 end
