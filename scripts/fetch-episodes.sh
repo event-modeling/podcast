@@ -111,8 +111,16 @@ fetch_episode_metadata() {
         yt-dlp --print "%(title)s" "$video_url" > "$episode_dir/title" 2>/dev/null
     fi
     if [ "$force_refresh" = "force" ] || [ ! -f "$episode_dir/date" ]; then
-        echo "Getting upload date for $video_id"
-        yt-dlp --print "%(upload_date)s" "$video_url" > "$episode_dir/date" 2>/dev/null
+        echo "Getting recording date for $video_id"
+        date_ret=$(yt-dlp --print "%(recording_date)s" "$video_url" 2>/dev/null)
+        if [ "$date_ret" = "NA" ] || [ -z "$date_ret" ]; then
+            # Prompt user for the recording date because it's missing on YouTube
+            date_ret=$(dialog --title "Missing Recording Date" --inputbox "YouTube does not have a recording date set for $video_id.\n\nPlease manually enter the recording date (YYYYMMDD):" 10 60 3>&1 1>&2 2>&3 3>&-)
+            if [ -z "$date_ret" ]; then
+                date_ret="NA"
+            fi
+        fi
+        echo "$date_ret" > "$episode_dir/date"
     fi
     if [ "$force_refresh" = "force" ] || [ ! -f "$episode_dir/description" ]; then
         echo "Getting description for $video_id"
@@ -393,7 +401,11 @@ while IFS=$'\t' read -r episode_num video_id episode_title; do
     
     if [ -n "$audio_source" ] && [ -f "$audio_source" ]; then
         upload_date=$(head -n 1 "$episode_dir/date" | tr -d '\r')
-        formatted_date=$(echo "$upload_date" | sed 's/\(....\)\(..\)\(..\)/\1-\2-\3/')
+        # Try bash date formatting first (robust for various inputs), fallback to sed format if that fails
+        formatted_date=$(date -d "$upload_date" "+%Y-%m-%d" 2>/dev/null)
+        if [ -z "$formatted_date" ]; then
+            formatted_date=$(echo "$upload_date" | sed 's/\(....\)\(..\)\(..\)/\1-\2-\3/')
+        fi
         description=$(cat "$episode_dir/description")
         duration=$(head -n 1 "$episode_dir/duration" | tr -d '\r')
         filesize=$(head -n 1 "$episode_dir/filesize" | tr -d '\r')
@@ -406,8 +418,8 @@ while IFS=$'\t' read -r episode_num video_id episode_title; do
         # Process description: convert lines ending with ":" to h4 headings
         processed_description=$(echo "$description" | awk '{
             if ($0 ~ /:$/ && NF > 0) {
-                # Remove trailing colon and convert to h4
                 gsub(/:$/, "", $0)
+                sub(/^[#[:space:]]*/, "", $0)
                 print "#### " $0
             } else {
                 print $0
