@@ -1,5 +1,7 @@
 #!/usr/bin/env fish
 
+echo (date "+%Y-%m-%d %H:%M:%S")" - add-seconds.fish invoked with args: $argv" >> ~/add-seconds.log
+
 # Detect display environment
 set -l is_x true
 if set -q WAYLAND_DISPLAY

@@ -1,0 +1,13 @@
+{
+    "KPlugin": {
+        "Category": "Utilities",
+        "Description": "A widget to run add-seconds.fish script with clipboard clipboard context.",
+        "Icon": "clock",
+        "Id": "org.kde.plasma.addseconds",
+        "Name": "Add Seconds",
+        "Version": "1.0",
+        "Website": "https://kde.org/"
+    },
+    "X-Plasma-API": "declarativeappletscript",
+    "X-Plasma-MainScript": "ui/main.qml"
+}
