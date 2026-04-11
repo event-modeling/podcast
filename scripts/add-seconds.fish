@@ -1,6 +1,6 @@
 #!/usr/bin/env fish
 
-echo (date "+%Y-%m-%d %H:%M:%S")" - add-seconds.fish invoked with args: $argv" >> ~/add-seconds.log
+echo (date "+%Y-%m-%d %H:%M:%S")" - add-seconds.fish invoked with args: $argv" >>~/add-seconds.log
 
 # Detect display environment
 set -l is_x true
@@ -14,7 +14,7 @@ function get_using_wl
 end
 
 function set_using_wl
-    wl-copy 2>/dev/null
+    wl-copy >/dev/null 2>&1
 end
 
 # Clipboard functions for X11
@@ -23,7 +23,7 @@ function get_using_x
 end
 
 function set_using_x
-    xclip -selection clipboard 2>/dev/null
+    xclip -selection clipboard >/dev/null 2>&1
 end
 
 # Add a time offset (in seconds) to a timestamp string (MM:SS or HH:MM:SS)
