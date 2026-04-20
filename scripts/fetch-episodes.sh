@@ -115,7 +115,8 @@ fetch_episode_metadata() {
         date_ret=$(yt-dlp --print "%(recording_date)s" "$video_url" 2>/dev/null)
         if [ "$date_ret" = "NA" ] || [ -z "$date_ret" ]; then
             # Prompt user for the recording date because it's missing on YouTube
-            date_ret=$(dialog --title "Missing Recording Date" --inputbox "YouTube does not have a recording date set for $video_id.\n\nPlease manually enter the recording date (YYYYMMDD):" 10 60 3>&1 1>&2 2>&3 3>&-)
+            default_date=$(date +"%Y%m%d")
+            date_ret=$(dialog --title "Missing Recording Date" --inputbox "YouTube does not have a recording date set for $video_id.\n\nPlease manually enter the recording date (YYYYMMDD):" 10 60 "$default_date" 3>&1 1>&2 2>&3 3>&-)
             if [ -z "$date_ret" ]; then
                 date_ret="NA"
             fi
