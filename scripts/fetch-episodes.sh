@@ -7,6 +7,26 @@ AUDIO_DIR="static/audio"
 CACHE_DIR="$HOME/.cache/event-modeling-podcast"
 CACHED_EPISODES_DIR="$CACHE_DIR/episodes"
 
+# Check terminal size (require at least 30 rows and 80 columns for dialog)
+MIN_ROWS=30
+MIN_COLS=80
+
+if [ -t 1 ]; then
+    rows=$(tput lines 2>/dev/null)
+    cols=$(tput cols 2>/dev/null)
+    
+    # Default to 0 if not a number
+    [[ "$rows" =~ ^[0-9]+$ ]] || rows=0
+    [[ "$cols" =~ ^[0-9]+$ ]] || cols=0
+    
+    if [ "$rows" -lt "$MIN_ROWS" ] || [ "$cols" -lt "$MIN_COLS" ]; then
+        echo "Error: Your terminal window is too small ($cols x $rows)." >&2
+        echo "The 'dialog' interface requires at least ${MIN_COLS} columns and ${MIN_ROWS} rows to display correctly." >&2
+        echo "Please resize your terminal window and try again." >&2
+        exit 1
+    fi
+fi
+
 echo "Starting script with:"
 echo "Channel URL: $CHANNEL_URL"
 echo "Output Dir: $OUTPUT_DIR"
@@ -101,8 +121,12 @@ fetch_episode_metadata() {
     episode_dir="$CACHED_EPISODES_DIR/$video_id"
     video_url="https://www.youtube.com/watch?v=$video_id"
 
+    echo "Fetching metadata for $video_id"
     if [ ! -d "$episode_dir" ]; then
+        echo "Creating episode directory for $video_id"
         mkdir -p "$episode_dir"
+    else
+        echo "Episode directory already exists for $video_id"
     fi
 
     # Get video metadata if not already cached or if force refresh is requested
@@ -126,6 +150,8 @@ fetch_episode_metadata() {
     if [ "$force_refresh" = "force" ] || [ ! -f "$episode_dir/description" ]; then
         echo "Getting description for $video_id"
         yt-dlp --print "%(description)s" "$video_url" > "$episode_dir/description" 2>/dev/null
+        echo "description is:"
+        cat "$episode_dir/description"
     fi
     
     sleep 1
